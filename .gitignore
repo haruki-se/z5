@@ -1,0 +1,14 @@
+# 環境変数・シークレット（APIキーが含まれるため絶対にコミットしない）
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
