@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>金太郎飴 お絵かきボード</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: sans-serif;
+  background: #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100dvh;
+  padding: 8px;
+  gap: 8px;
+}
+h1 { font-size: 1rem; color: #333; padding: 4px 0; }
+
+/* toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
+.toolbar label { font-size: 0.85rem; color: #555; white-space: nowrap; }
+.toolbar select {
+  flex: 1;
+  font-size: 1rem;
+  padding: 4px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+/* canvas */
+#grid-canvas {
+  border: 2px solid #aaa;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none;
+  display: block;
+}
+
+/* color buttons */
+.color-bar {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: 480px;
+}
+.color-btn {
+  flex: 1;
+  height: 52px;
+  border: 3px solid transparent;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: border-color .15s, transform .1s;
+}
+.color-btn.active  { border-color: #333; transform: scale(0.95); }
+.color-btn[data-color="white"]  { background: #fff; color: #333; border-color: #ccc; }
+.color-btn[data-color="pink"]   { background: #ffb6c1; color: #333; }
+.color-btn[data-color="yellow"] { background: #ffeb3b; color: #333; }
+.color-btn[data-color="eraser"] { background: #e0e0e0; color: #333; }
+.color-btn.active[data-color="white"] { border-color: #333; }
+
+/* page nav */
+.page-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
+.nav-btn {
+  width: 40px; height: 40px;
+  font-size: 1.2rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #f5f5f5;
+  cursor: pointer;
+}
+.nav-btn:disabled { opacity: .35; cursor: default; }
+#page-label { flex: 1; text-align: center; font-size: 0.9rem; color: #555; }
+#copy-btn, #reset-btn, #route-btn {
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #f5f5f5;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#route-btn.active { background: #ffe0b2; border-color: #ff9800; }
+
+/* action buttons */
+.action-bar {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 480px;
+}
+.action-btn {
+  flex: 1;
+  height: 52px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+#gcode-btn { background: #607d8b; color: #fff; }
+#print-btn { background: #ff9800; color: #fff; }
+
+/* status */
+#status {
+  width: 100%;
+  max-width: 480px;
+  font-size: 0.78rem;
+  color: #555;
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  min-height: 32px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+
+/* modal */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 320px;
+  width: 90%;
+  text-align: center;
+}
+.modal h2 { font-size: 1rem; margin-bottom: 10px; }
+.modal p  { font-size: 0.85rem; color: #444; white-space: pre-wrap; word-break: break-all; }
+.modal button {
+  margin-top: 16px;
+  padding: 10px 28px;
+  border: none;
+  border-radius: 6px;
+  background: #ff9800;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+<h1>金太郎飴 お絵かきボード</h1>
+
+<div class="toolbar">
+  <label for="grid-size-sel">マス目数:</label>
+  <select id="grid-size-sel"></select>
+</div>
+
+<canvas id="grid-canvas"></canvas>
+
+<div class="color-bar">
+  <button class="color-btn" data-color="white">白</button>
+  <button class="color-btn" data-color="pink">ピンク</button>
+  <button class="color-btn" data-color="yellow">黄色</button>
+  <button class="color-btn" data-color="eraser">消しゴム</button>
+</div>
+
+<div class="page-nav">
+  <button class="nav-btn" id="prev-btn">◀</button>
+  <span id="page-label">1 / 1</span>
+  <button class="nav-btn" id="next-btn">▶</button>
+  <button id="copy-btn">前をコピー</button>
+  <button id="reset-btn">リセット</button>
+  <button id="route-btn">ルート表示</button>
+</div>
+
+<div class="action-bar">
+  <button class="action-btn" id="gcode-btn">G-code ダウンロード</button>
+  <button class="action-btn" id="print-btn">生成してプリント</button>
+</div>
+
+<div id="status">色を選んでグリッドを塗ってください</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h2 id="modal-title"></h2>
+    <p  id="modal-msg"></p>
+    <button onclick="closeModal()">OK</button>
+  </div>
+</div>
+
+<script>
+{% raw %}
+const COLORS   = ["white", "pink", "yellow"];
+const EMPTY_PX = "#c8c8c8";
+const COLOR_PX = { white: "#ffffff", pink: "#ffb6c1", yellow: "#ffeb3b" };
+
+let cfg         = null;
+let gridSize    = 3;
+let pages       = [];
+let currentPage = 0;
+let maxPages    = 1;
+let currentColor = "white";
+let routeVisible = false;
+let isPointerDown = false;
+let lastCell    = null;
+
+const canvas    = document.getElementById("grid-canvas");
+const ctx       = canvas.getContext("2d");
+
+// ── 初期化 ──────────────────────────────────────────────────
+
+async function init() {
+  cfg = await fetch("/api/config").then(r => r.json());
+  gridSize = cfg.gridSizeDefault;
+  maxPages = cfg.maxPages;
+
+  const sel = document.getElementById("grid-size-sel");
+  for (let i = cfg.gridSizeMin; i <= cfg.gridSizeMax; i++) {
+    const opt = document.createElement("option");
+    opt.value = opt.textContent = i;
+    if (i === gridSize) opt.selected = true;
+    sel.appendChild(opt);
+  }
+
+  while (pages.length < maxPages) pages.push(emptyPage());
+  applyGridSize(gridSize);
+  selectColor("white");
+  bindEvents();
+}
+
+function applyGridSize(size) {
+  gridSize = size;
+  resizeCanvas();
+  updatePageLabel();
+  redraw();
+}
+
+function emptyPage() {
+  return { white: [], pink: [], yellow: [] };
+}
+
+function resizeCanvas() {
+  const size = Math.min(window.innerWidth - 24, 480);
+  const cellPx = Math.floor(size / gridSize);
+  const px = cellPx * gridSize;
+  canvas.width  = px;
+  canvas.height = px;
+  canvas.style.width  = px + "px";
+  canvas.style.height = px + "px";
+}
+
+// ── 描画 ────────────────────────────────────────────────────
+
+function cellPx() { return canvas.width / gridSize; }
+
+function redraw() {
+  const cp = cellPx();
+  const page = pages[currentPage];
+
+  const colorMap = {};
+  for (const color of COLORS) {
+    for (const [r, c] of page[color]) colorMap[`${r},${c}`] = color;
+  }
+
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      const key = `${r},${c}`;
+      ctx.fillStyle = key in colorMap ? COLOR_PX[colorMap[key]] : EMPTY_PX;
+      ctx.fillRect(c * cp, r * cp, cp, cp);
+      ctx.strokeStyle = "#cccccc";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(c * cp + 0.5, r * cp + 0.5, cp - 1, cp - 1);
+    }
+  }
+
+  if (routeVisible) drawRoute();
+}
+
+function drawRoute() {
+  const cp   = cellPx();
+  const half = cp / 2;
+  let prev = null;
+
+  ctx.strokeStyle = "red";
+  ctx.fillStyle   = "red";
+  ctx.lineWidth   = 2;
+
+  for (let r = 0; r < gridSize; r++) {
+    const cols = r % 2 === 0
+      ? Array.from({length: gridSize}, (_, i) => i)
+      : Array.from({length: gridSize}, (_, i) => gridSize - 1 - i);
+    for (const c of cols) {
+      const x = c * cp + half;
+      const y = r * cp + half;
+      if (prev) drawArrow(prev[0], prev[1], x, y);
+      prev = [x, y];
+    }
+  }
+}
+
+function drawArrow(x1, y1, x2, y2) {
+  const hl  = 8;
+  const ang = Math.atan2(y2 - y1, x2 - x1);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - hl * Math.cos(ang - Math.PI / 6), y2 - hl * Math.sin(ang - Math.PI / 6));
+  ctx.lineTo(x2 - hl * Math.cos(ang + Math.PI / 6), y2 - hl * Math.sin(ang + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ── セル操作 ────────────────────────────────────────────────
+
+function getCell(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const cp   = cellPx();
+  const px   = (clientX - rect.left) * (canvas.width  / rect.width);
+  const py   = (clientY - rect.top)  * (canvas.height / rect.height);
+  const r    = Math.floor(py / cp);
+  const c    = Math.floor(px / cp);
+  if (r >= 0 && r < gridSize && c >= 0 && c < gridSize) return [r, c];
+  return null;
+}
+
+function applyCell(r, c) {
+  const key = `${r},${c}`;
+  if (lastCell && lastCell === key) return;
+  lastCell = key;
+
+  const page = pages[currentPage];
+  for (const color of COLORS) {
+    page[color] = page[color].filter(([pr, pc]) => !(pr === r && pc === c));
+  }
+  if (currentColor !== "eraser") page[currentColor].push([r, c]);
+  redraw();
+}
+
+// ── イベント ────────────────────────────────────────────────
+
+function bindEvents() {
+  // マウス
+  canvas.addEventListener("mousedown", e => {
+    isPointerDown = true; lastCell = null;
+    const cell = getCell(e.clientX, e.clientY);
+    if (cell) applyCell(...cell);
+  });
+  canvas.addEventListener("mousemove", e => {
+    if (!isPointerDown) return;
+    const cell = getCell(e.clientX, e.clientY);
+    if (cell) applyCell(...cell);
+  });
+  window.addEventListener("mouseup", () => { isPointerDown = false; lastCell = null; });
+
+  // タッチ
+  canvas.addEventListener("touchstart", e => {
+    e.preventDefault(); isPointerDown = true; lastCell = null;
+    const t = e.touches[0];
+    const cell = getCell(t.clientX, t.clientY);
+    if (cell) applyCell(...cell);
+  }, { passive: false });
+  canvas.addEventListener("touchmove", e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    const cell = getCell(t.clientX, t.clientY);
+    if (cell) applyCell(...cell);
+  }, { passive: false });
+  canvas.addEventListener("touchend", () => { isPointerDown = false; lastCell = null; });
+
+  // グリッドサイズ
+  document.getElementById("grid-size-sel").addEventListener("change", e => {
+    applyGridSize(parseInt(e.target.value));
+  });
+
+  // カラーボタン
+  document.querySelectorAll(".color-btn").forEach(btn => {
+    btn.addEventListener("click", () => selectColor(btn.dataset.color));
+  });
+
+  // ページナビ
+  document.getElementById("prev-btn").addEventListener("click", prevPage);
+  document.getElementById("next-btn").addEventListener("click", nextPage);
+  document.getElementById("copy-btn").addEventListener("click", copyPrevPage);
+  document.getElementById("reset-btn").addEventListener("click", resetPage);
+  document.getElementById("route-btn").addEventListener("click", toggleRoute);
+
+  // アクション
+  document.getElementById("gcode-btn").addEventListener("click", downloadGcode);
+  document.getElementById("print-btn").addEventListener("click", sendPrint);
+
+  // リサイズ
+  window.addEventListener("resize", () => { resizeCanvas(); redraw(); });
+}
+
+// ── UI操作 ──────────────────────────────────────────────────
+
+function selectColor(color) {
+  currentColor = color;
+  document.querySelectorAll(".color-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.color === color);
+  });
+  setStatus(`カラー: ${{"white":"白","pink":"ピンク","yellow":"黄色","eraser":"消しゴム"}[color]}`);
+}
+
+function updatePageLabel() {
+  document.getElementById("page-label").textContent = `${currentPage + 1} / ${maxPages}`;
+  document.getElementById("prev-btn").disabled = currentPage === 0;
+  document.getElementById("next-btn").disabled = currentPage === maxPages - 1;
+}
+
+function prevPage() {
+  if (currentPage > 0) { currentPage--; updatePageLabel(); redraw(); }
+}
+function nextPage() {
+  if (currentPage < maxPages - 1) { currentPage++; updatePageLabel(); redraw(); }
+}
+function copyPrevPage() {
+  if (currentPage === 0) return;
+  const prev = pages[currentPage - 1];
+  pages[currentPage] = { white: [...prev.white], pink: [...prev.pink], yellow: [...prev.yellow] };
+  redraw();
+  setStatus("前のデザインをコピーしました");
+}
+function resetPage() {
+  pages[currentPage] = emptyPage();
+  redraw();
+  setStatus("リセットしました");
+}
+function toggleRoute() {
+  routeVisible = !routeVisible;
+  const btn = document.getElementById("route-btn");
+  btn.classList.toggle("active", routeVisible);
+  btn.textContent = routeVisible ? "ルート非表示" : "ルート表示";
+  redraw();
+}
+function setStatus(msg) {
+  document.getElementById("status").textContent = msg;
+}
+
+// ── APIアクション ────────────────────────────────────────────
+
+async function downloadGcode() {
+  setStatus("G-code を生成中...");
+  const res = await fetch("/api/gcode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pages, gridSize }),
+  });
+  if (!res.ok) { showModal("エラー", "G-code 生成に失敗しました"); return; }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = "output_plate.gcode"; a.click();
+  URL.revokeObjectURL(url);
+  setStatus("G-code をダウンロードしました");
+}
+
+async function sendPrint() {
+  const hasAny = pages.some(p => COLORS.some(c => p[c].length > 0));
+  if (!hasAny) { showModal("エラー", "デザインが描かれていません"); return; }
+
+  setStatus("OctoPrint に送信中...");
+  document.getElementById("print-btn").disabled = true;
+  try {
+    const res  = await fetch("/api/print", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pages, gridSize }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showModal("プリント開始", `OctoPrint に送信しました\n\n${data.ref}`);
+      setStatus("OctoPrint に送信しました");
+    } else {
+      showModal("送信エラー", data.error);
+      setStatus("送信に失敗しました");
+    }
+  } finally {
+    document.getElementById("print-btn").disabled = false;
+  }
+}
+
+// ── モーダル ─────────────────────────────────────────────────
+
+function showModal(title, msg) {
+  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-msg").textContent   = msg;
+  document.getElementById("modal-overlay").classList.add("open");
+}
+function closeModal() {
+  document.getElementById("modal-overlay").classList.remove("open");
+}
+
+init();
+{% endraw %}
+</script>
+</body>
+</html>

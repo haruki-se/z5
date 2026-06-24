@@ -6,7 +6,8 @@
 # 起動すると DrawingApp ウィンドウが開きます。
 
 import sys
-sys.stdout.reconfigure(encoding='utf-8')  # Windows でのコンソール文字化けを防ぐ
+if sys.stdout is not None:
+    sys.stdout.reconfigure(encoding='utf-8')
 
 import tkinter as tk
 from app import DrawingApp

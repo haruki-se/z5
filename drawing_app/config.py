@@ -4,10 +4,18 @@
 # 数値を変えたいときはこのファイルだけ編集すれば OK です。
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent / ".env")
+# .exe として実行中は sys.executable の隣の .env を、
+# スクリプト実行中は config.py の隣の .env を読む
+if getattr(sys, "frozen", False):
+    _base = Path(sys.executable).parent
+else:
+    _base = Path(__file__).parent
+
+load_dotenv(_base / ".env")
 
 # ---------------------------------------------------------------------------
 # プリンター物理定数
@@ -59,4 +67,4 @@ COLORS = ["white", "pink", "yellow"]
 # ---------------------------------------------------------------------------
 
 OCTOPRINT_URL     = "http://3dz5.local"
-OCTOPRINT_API_KEY = os.environ["OCTOPRINT_API_KEY"]
+OCTOPRINT_API_KEY = os.environ.get("OCTOPRINT_API_KEY", "")
