@@ -9,6 +9,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+金太郎飴code_exe/.venv/
 
 # OS
 .DS_Store

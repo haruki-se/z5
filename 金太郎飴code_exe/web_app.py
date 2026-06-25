@@ -4,12 +4,19 @@ import tempfile
 import socket
 from pathlib import Path
 
-# 実行中のPython自身にパッケージをインストール
-subprocess.run(
-    [sys.executable, "-m", "pip", "install", "--quiet",
-     "flask", "python-dotenv", "requests", "qrcode"],
-    check=False,
-)
+_venv = Path(__file__).parent / ".venv"
+_venv_python = _venv / "Scripts" / "python.exe"
+_packages = ["flask", "python-dotenv", "requests", "qrcode"]
+
+if sys.prefix == sys.base_prefix:
+    # 仮想環境の外から起動された場合：venvを作ってそちらで再起動する
+    if not _venv.exists():
+        print("初回セットアップ: 仮想環境を作成中...")
+        subprocess.run([sys.executable, "-m", "venv", str(_venv)], check=True)
+    print("パッケージをインストール中...")
+    subprocess.run([str(_venv_python), "-m", "pip", "install", "--quiet"] + _packages)
+    result = subprocess.run([str(_venv_python)] + sys.argv)
+    sys.exit(result.returncode)
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "drawing_app"))
 
