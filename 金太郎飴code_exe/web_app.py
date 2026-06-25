@@ -1,7 +1,15 @@
 import sys
+import subprocess
 import tempfile
 import socket
 from pathlib import Path
+
+# 実行中のPython自身にパッケージをインストール
+subprocess.run(
+    [sys.executable, "-m", "pip", "install", "--quiet",
+     "flask", "python-dotenv", "requests", "qrcode"],
+    check=False,
+)
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "drawing_app"))
 
