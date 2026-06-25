@@ -15,7 +15,11 @@ if getattr(sys, "frozen", False):
 else:
     _base = Path(__file__).parent
 
-load_dotenv(_base / ".env", encoding="utf-8-sig")
+_env_path = _base / ".env"
+if not _env_path.exists():
+    print(f"[ERROR] .env が見つかりません: {_env_path}")
+    print(f"        .env.sample を参考に上記パスに .env を作成してください")
+load_dotenv(_env_path, encoding="utf-8-sig")
 
 # ---------------------------------------------------------------------------
 # プリンター物理定数
