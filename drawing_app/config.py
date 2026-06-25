@@ -15,7 +15,7 @@ if getattr(sys, "frozen", False):
 else:
     _base = Path(__file__).parent
 
-load_dotenv(_base / ".env")
+load_dotenv(_base / ".env", encoding="utf-8-sig")
 
 # ---------------------------------------------------------------------------
 # プリンター物理定数

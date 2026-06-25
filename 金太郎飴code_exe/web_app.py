@@ -74,7 +74,15 @@ if __name__ == "__main__":
 
     url = f"http://{local_ip}:5000"
     print(f"\n  PC:          http://localhost:5000")
-    print(f"  smartphone:  {url}\n")
+    print(f"  smartphone:  {url}")
+
+    env_path = Path(__file__).parent.parent / "drawing_app" / ".env"
+    if env_path.exists():
+        print(f"  .env:        {env_path} [OK]")
+    else:
+        print(f"  .env:        {env_path} [NOT FOUND]")
+        print(f"               .env.sample を参考に上記パスに .env を作成してください")
+    print()
 
     try:
         import qrcode, io
