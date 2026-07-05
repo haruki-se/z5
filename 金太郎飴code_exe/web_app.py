@@ -40,15 +40,7 @@ def get_config():
         "gridSizeMin":     config.GRID_SIZE_MIN,
         "gridSizeMax":     config.GRID_SIZE_MAX,
         "gridSizeDefault": config.GRID_SIZE_DEFAULT,
-        "maxPages":        gc.calc_layout(config.GRID_SIZE_MIN)["max_pages"],
     })
-
-
-@app.route("/api/layout")
-def get_layout():
-    grid_size = int(request.args.get("gridSize", config.GRID_SIZE_DEFAULT))
-    layout = gc.calc_layout(grid_size)
-    return jsonify({"maxPages": layout["max_pages"]})
 
 
 @app.route("/api/gcode", methods=["POST"])

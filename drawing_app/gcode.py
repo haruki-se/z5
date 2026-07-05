@@ -3,10 +3,13 @@
 # プリンターへの動作指示（Gコード）を生成する関数群です。
 # UI（tkinter）には一切依存していないため、単独でテストや再利用が可能です。
 #
+# 金太郎飴方式: 全レイヤーはX/Y座標（断面の形）が共通で、
+# レイヤーごとにZ座標だけがMATERIAL_SIZE分ずつ積み上がっていきます。
+#
 # 主な処理の流れ:
-#   1. calc_layout()  : プレートサイズからデザインの配置数・開始座標を計算
+#   1. calc_layout()  : プレート中央座標からデザインの開始座標を計算
 #   2. generate_snake_route() : ノズルが無駄に移動しない蛇行順序を生成
-#   3. build_gcode()  : 全デザインの色情報をもとに Gコード文字列を組み立て
+#   3. build_gcode()  : 全レイヤーの色情報をもとに Gコード文字列を組み立て
 #   4. save_gcode()   : build_gcode() の結果をファイルに書き出す
 
 import os
@@ -37,109 +40,77 @@ def generate_snake_route(grid_size: int) -> list[tuple[int, int]]:
 
 def calc_layout(grid_size: int) -> dict:
     """
-    プレートサイズとノズルオフセットをもとに、デザインの配置情報を計算する。
+    実測済みのプレート中央座標に合わせて、デザイン（断面）の開始座標を計算する。
 
-    X方向・Y方向それぞれについて何個のデザインを並べられるかを求め、
-    プレート中央に寄せるための開始オフセットも計算する。
+    全レイヤーはこの同じX/Y座標を共有し、Z座標だけが積み重ねに応じて変わる。
 
     Args:
         grid_size: グリッドの一辺のマス数
 
     Returns:
         以下のキーを持つ dict:
-            n_cols (int)          : X方向に並べられるデザイン数
-            n_rows (int)          : Y方向に並べられるデザイン数
-            max_pages (int)       : 合計配置可能デザイン数 (n_cols × n_rows)
-            start_offset_x (float): 中央寄せのための X 方向開始座標 (mm)
-            start_offset_y (float): 中央寄せのための Y 方向開始座標 (mm)
-            design_size (float)   : デザイン1個の物理サイズ (mm)
-            avail_y (float)       : ノズルオフセット考慮後の Y 方向有効範囲 (mm)
+            design_size (float)    : デザイン1個の物理サイズ (mm)
+            start_offset_x (float) : デザイン原点(セル(0,0)側)の X 座標 (mm)
+            start_offset_y (float) : デザイン原点(セル(0,0)側)の Y 座標 (mm)
     """
     # デザイン1個の物理サイズ（セルピッチ × マス数）
     design_size = config.CELL_SPACE * grid_size
 
-    avail_x = config.MAX_PRINTER_SIZE_X
-    # Y方向はノズルオフセット分だけ使える範囲が狭まる
-    avail_y = config.MAX_PRINTER_SIZE_Y - config.GLOBAL_Y_OFFSET
-
-    # 各方向に何個並べられるか（最低1個は保証）
-    n_cols = max(1, int((avail_x + config.DESIGN_GAP) / (design_size + config.DESIGN_GAP)))
-    n_rows = max(1, int((avail_y + config.DESIGN_GAP) / (design_size + config.DESIGN_GAP)))
-
-    # 全デザインを並べたときの合計長さ
-    total_len_x = n_cols * design_size + (n_cols - 1) * config.DESIGN_GAP
-    total_len_y = n_rows * design_size + (n_rows - 1) * config.DESIGN_GAP
-
-    # 中央寄せのための開始オフセット（余白を左右・上下に均等に配分）
-    start_offset_x = (avail_x - total_len_x) / 2
-    start_offset_y = (avail_y - total_len_y) / 2
+    # 実測済みのプレート中央座標(config.CENTER_X/Y)にデザインの中心が来るよう配置する
+    # Y側はセル座標計算時にGLOBAL_Y_OFFSETが別途加算されるため、ここで先に差し引いておく
+    # +JOINT_SIZE/2 は design_size の末尾に含まれる余分な半目地ぶんの補正
+    # （grid_sizeが奇数なら中央セル、偶数なら中央4セルの中点が、ちょうどCENTER_X/Yに一致する）
+    start_offset_x = config.CENTER_X - design_size / 2 + config.JOINT_SIZE / 2
+    start_offset_y = (config.CENTER_Y - config.GLOBAL_Y_OFFSET) - design_size / 2 + config.JOINT_SIZE / 2
 
     return {
-        "n_cols":         n_cols,
-        "n_rows":         n_rows,
-        "max_pages":      n_cols * n_rows,
+        "design_size":    design_size,
         "start_offset_x": start_offset_x,
         "start_offset_y": start_offset_y,
-        "design_size":    design_size,
-        "avail_y":        avail_y,
     }
 
 
 def build_gcode(pages: list[dict], grid_size: int) -> str:
     """
-    全ページのデザインデータから Gコード文字列を生成して返す。
+    全レイヤーの色情報から、飴を積み重ねるGコード文字列を組み立てる。
 
-    各デザインをスネークルート順にたどり、セルの色に応じた
-    ノズルコマンド（OCTO90X）を出力する。
-    白セルは「有色ブロックが1つでも存在するデザイン」にのみ出力される
-    （全白の空デザインはスキップ）。
+    pages[0] が最下段（1層目）で、以降のレイヤーは同じX/Y座標のまま
+    MATERIAL_SIZE分ずつ高いZ座標に積み上がっていく（金太郎飴方式）。
+    退避高さ(SAFE_Z_LAYER1 / SAFE_Z_LAYER2_PLUS)もタワーの高さに合わせて層ごとに底上げされる。
 
     Args:
-        pages:     ページデータのリスト。
+        pages:     レイヤーデータのリスト（先頭が最下段）。
                    各要素は {"white": [(r,c), ...], "pink": [...], "yellow": [...]}
-        grid_size: 現在のグリッドの一辺のマス数
+        grid_size: 全レイヤー共通のグリッドの一辺のマス数
 
     Returns:
         Gコード文字列
     """
-    layout = calc_layout(grid_size)
-    n_cols         = layout["n_cols"]
-    n_rows         = layout["n_rows"]
+    layout         = calc_layout(grid_size)
     start_offset_x = layout["start_offset_x"]
     start_offset_y = layout["start_offset_y"]
-    design_size    = layout["design_size"]
 
     route = generate_snake_route(grid_size)
 
     # --- ヘッダー部 ---
-    gcode  = "; 平面配置自動レイアウトモード\n"
+    gcode  = "; 積み重ねモード（金太郎飴方式）\n"
     gcode += f"; 素材ピッチ: {config.CELL_SPACE}mm (素材{config.MATERIAL_SIZE}mm + 目地{config.JOINT_SIZE}mm)\n"
     gcode += f"; 自作ノズルオフセット: Y+{config.GLOBAL_Y_OFFSET}mm, Y物理限界: {config.MAX_PRINTER_SIZE_Y}mm\n"
     # プリンター初期化: ヒーター停止 → ホーミング → 絶対座標モード → mm単位モード
     gcode += "M140 S0\nM104 S0\nG28\nG90\nG21\n"
 
-    # --- デザインごとの出力 ---
-    for page_index, page_data in enumerate(pages):
-        # プレートに収まる最大数を超えたら打ち切り
-        if page_index >= n_cols * n_rows:
-            break
-
-        # 全色のリストが空 = 未描画デザイン → スキップ
-        is_empty = all(not page_data.get(color) for color in config.COLORS)
-        if is_empty:
-            continue
-
+    # --- レイヤーごとの出力（下から上へ積み上げる） ---
+    for layer_index, page_data in enumerate(pages):
         # 有色ブロックが1つでもあれば白セルも出力する（背景として必要なため）
         has_colored_blocks = bool(page_data["pink"] or page_data["yellow"])
 
-        # このデザインのプレート上の基準座標を計算
-        col_idx = page_index % n_cols   # 何列目か
-        row_idx = page_index // n_cols  # 何行目か
-        page_origin_x = start_offset_x + col_idx * (design_size + config.DESIGN_GAP)
-        page_origin_y = start_offset_y + row_idx * (design_size + config.DESIGN_GAP)
+        # このレイヤーのZ高さ（1段ごとにMATERIAL_SIZE分だけ積み上がる）
+        layer_draw_z = config.DRAW_Z + layer_index * config.MATERIAL_SIZE
+        safe_z_margin = config.SAFE_Z_LAYER1 if layer_index == 0 else config.SAFE_Z_LAYER2_PLUS
+        layer_safe_z = layer_draw_z + safe_z_margin
 
-        gcode += f"\n; --- デザイン {page_index + 1} 開始 ---\n"
-        gcode += f"G0 Z{config.SAFE_Z:.2f} F{config.F_SPEED}\n"  # まず安全高さへ退避
+        gcode += f"\n; --- レイヤー {layer_index + 1} 開始 (Z={layer_draw_z:.2f}) ---\n"
+        gcode += f"G0 Z{layer_safe_z:.2f} F{config.F_SPEED}\n"  # まず安全高さへ退避
 
         # スネークルート順に各セルを処理
         for row, col in route:
@@ -153,24 +124,22 @@ def build_gcode(pages: list[dict], grid_size: int) -> str:
                 color = "white"
 
             if color:
-                # セル中心のプリンター座標を計算
-                # X: デザイン原点 + セル列オフセット + 素材の半径
-                x_pos = page_origin_x + (col * config.CELL_SPACE) + (config.MATERIAL_SIZE / 2)
-                # Y: 同上 + ノズルのグローバルオフセット
-                y_pos = page_origin_y + (row * config.CELL_SPACE) + (config.MATERIAL_SIZE / 2) + config.GLOBAL_Y_OFFSET
+                # セル中心のプリンター座標を計算（全レイヤー共通のX/Y）
+                x_pos = start_offset_x + (col * config.CELL_SPACE) + (config.MATERIAL_SIZE / 2)
+                y_pos = start_offset_y + (row * config.CELL_SPACE) + (config.MATERIAL_SIZE / 2) + config.GLOBAL_Y_OFFSET
 
                 gcode += f"G0 X{x_pos:.2f} Y{y_pos:.2f} F{config.F_SPEED}\n"  # 座標へ高速移動
-                gcode += f"G1 Z{config.DRAW_Z:.2f} F{config.F_SPEED}\n"        # ノズルを素材位置まで下降
+                gcode += f"G1 Z{layer_draw_z:.2f} F{config.F_SPEED}\n"        # ノズルを素材位置まで下降
                 gcode += "G4 P1000\n"                                           # 1秒待機（素材安定）
                 gcode += f"{config.CMD_MAP.get(color, 'OCTO900')} ; {color.upper()}\n"  # 色ノズル噴射
                 gcode += "G4 P1000\n"                                           # 1秒待機（素材定着）
-                gcode += f"G0 Z{config.SAFE_Z:.2f} F{config.F_SPEED}\n"        # ノズルを安全高さへ退避
+                gcode += f"G0 Z{layer_safe_z:.2f} F{config.F_SPEED}\n"        # ノズルを安全高さへ退避
 
         gcode += "OCTO900 ; IDLE\n"  # ノズルをアイドル状態に戻す
 
     # --- フッター部: 終了動作 ---
-    gcode += "G0 Z50 F2250\n"   # ノズルを高く退避
-    gcode += "G28 X0 Y0\n"      # X・Y をホームへ戻す
+    gcode += f"G0 Z{config.END_Z:.2f} F{config.F_SPEED}\n"                       # ノズルを安全高さへ退避
+    gcode += f"G0 X{config.END_X:.2f} Y{config.END_Y:.2f} F{config.F_SPEED}\n"  # プレートが手前に来る位置へ移動
     gcode += "M84\n"             # モーターをオフ
     return gcode
 
@@ -180,11 +149,11 @@ def save_gcode(pages: list[dict], grid_size: int, file_path: str = "output_route
     Gコードを生成してファイルに保存する。
 
     Args:
-        pages:     ページデータのリスト
-        grid_size: 現在のグリッドサイズ
+        pages:     レイヤーデータのリスト
+        grid_size: 全レイヤー共通のグリッドサイズ
         file_path: 出力先ファイルパス（デフォルト: output_route.gcode）
     """
     content = build_gcode(pages, grid_size)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
-    print(f"平面配置G-codeを生成しました: {os.path.abspath(file_path)}")
+    print(f"積み重ねG-codeを生成しました: {os.path.abspath(file_path)}")

@@ -25,7 +25,7 @@ class DrawingApp:
         self.grid_size  = config.GRID_SIZE_DEFAULT
         self.cell_size  = self.canvas_px // self.grid_size
         self.current_color = config.COLORS[0]
-        self.pages: list[dict] = []
+        self.pages: list[dict] = [{k: [] for k in config.COLORS}]
         self.current_page  = 0
         self.route_visible = False
 
@@ -43,14 +43,16 @@ class DrawingApp:
 
         tk.Label(toolbar, text="マス目数:", bg=PANEL_BG, font=("", 10)).pack(side=tk.LEFT, padx=(0, 4))
         self.grid_size_var = tk.IntVar(value=self.grid_size)
-        tk.Spinbox(
+        self.grid_size_spinbox = tk.Spinbox(
             toolbar,
             from_=config.GRID_SIZE_MIN, to=config.GRID_SIZE_MAX,
             textvariable=self.grid_size_var,
             width=4, font=("", 11),
             command=self.apply_grid_size,
-        ).pack(side=tk.LEFT)
-        tk.Button(toolbar, text="適用", command=self.apply_grid_size, padx=6).pack(side=tk.LEFT, padx=4)
+        )
+        self.grid_size_spinbox.pack(side=tk.LEFT)
+        self.grid_size_apply_btn = tk.Button(toolbar, text="適用", command=self.apply_grid_size, padx=6)
+        self.grid_size_apply_btn.pack(side=tk.LEFT, padx=4)
 
         # ── 3カラムメインエリア
         main = tk.Frame(self.master, bg=PANEL_BG)
@@ -120,8 +122,8 @@ class DrawingApp:
         panel = tk.Frame(parent, bg=PANEL_BG, padx=10, pady=12, relief=tk.GROOVE, bd=1)
         panel.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
 
-        # ページナビ
-        tk.Label(panel, text="デザイン", bg=PANEL_BG, font=("", 9, "bold")).pack(pady=(0, 4))
+        # レイヤーナビ
+        tk.Label(panel, text="レイヤー（積み重ね順）", bg=PANEL_BG, font=("", 9, "bold")).pack(pady=(0, 4))
         nav = tk.Frame(panel, bg=PANEL_BG)
         nav.pack()
         tk.Button(nav, text="◀", width=3, command=self.prev_page).pack(side=tk.LEFT)
@@ -132,10 +134,11 @@ class DrawingApp:
         tk.Frame(panel, bg=SEP_COLOR, height=1).pack(fill=tk.X, pady=10)
 
         btn = dict(width=13, pady=5, font=("", 9))
-        tk.Button(panel, text="前ページをコピー",   command=self.copy_prev_page,  **btn).pack(pady=3)
+        tk.Button(panel, text="レイヤー追加",       command=self.add_layer,       **btn).pack(pady=3)
+        tk.Button(panel, text="前レイヤーをコピー", command=self.copy_prev_page,  **btn).pack(pady=3)
         self.route_btn = tk.Button(panel, text="ルートを表示", command=self.toggle_route_visibility, **btn)
         self.route_btn.pack(pady=3)
-        tk.Button(panel, text="このページをリセット", command=self.reset_all, **btn).pack(pady=3)
+        tk.Button(panel, text="このレイヤーをリセット", command=self.reset_all, **btn).pack(pady=3)
 
         tk.Frame(panel, bg=SEP_COLOR, height=1).pack(fill=tk.X, pady=10)
 
@@ -156,16 +159,17 @@ class DrawingApp:
 
     # ─── グリッド構築 ──────────────────────────────────────────────
 
-    def _calculate_max_pages(self):
-        return gcode.calc_layout(config.GRID_SIZE_MIN)["max_pages"]
-
-    def _initialize_pages(self):
-        self.pages = [{"white": [], "pink": [], "yellow": []} for _ in range(self.max_pages)]
-
     def _update_page_label(self):
-        self.page_label.config(text=f"{self.current_page + 1} / {self.max_pages}")
+        self.page_label.config(text=f"{self.current_page + 1} / {len(self.pages)}")
+
+    def _grid_size_locked(self) -> bool:
+        # 2レイヤー目を追加した時点で、以降はマス目数を変更できない
+        # （積み重ねの全レイヤーで断面の形を揃える必要があるため）
+        return len(self.pages) >= 2
 
     def apply_grid_size(self):
+        if self._grid_size_locked():
+            return
         try:
             new_size = int(self.grid_size_var.get())
         except (ValueError, AttributeError):
@@ -175,10 +179,6 @@ class DrawingApp:
 
         self.grid_size = new_size
         self.cell_size = self.canvas_px // self.grid_size
-        self.max_pages = self._calculate_max_pages()
-
-        if not self.pages:
-            self._initialize_pages()
 
         self.current_page = 0
         self._update_page_label()
@@ -276,7 +276,7 @@ class DrawingApp:
     def _clear_route_lines(self):
         self.canvas.delete("route_line")
 
-    # ─── ページ操作 ────────────────────────────────────────────────
+    # ─── レイヤー操作 ──────────────────────────────────────────────
 
     def prev_page(self):
         if self.current_page > 0:
@@ -287,12 +287,23 @@ class DrawingApp:
                 self._draw_route()
 
     def next_page(self):
-        if self.current_page < self.max_pages - 1:
+        if self.current_page < len(self.pages) - 1:
             self.current_page += 1
             self._update_page_label()
             self._update_canvas_colors()
             if self.route_visible:
                 self._draw_route()
+
+    def add_layer(self):
+        self.pages.append({k: [] for k in config.COLORS})
+        self.current_page = len(self.pages) - 1
+        if self._grid_size_locked():
+            self.grid_size_spinbox.config(state="disabled")
+            self.grid_size_apply_btn.config(state="disabled")
+        self._update_page_label()
+        self._update_canvas_colors()
+        if self.route_visible:
+            self._draw_route()
 
     def copy_prev_page(self):
         if self.current_page > 0:
@@ -303,6 +314,15 @@ class DrawingApp:
 
     def reset_all(self):
         self.pages[self.current_page] = {k: [] for k in config.COLORS}
+        self._update_canvas_colors()
+
+    def _reset_job_after_print(self):
+        # 印刷が終わったら、また最初にマス目数を設定するところからやり直す
+        self.pages = [{k: [] for k in config.COLORS}]
+        self.current_page = 0
+        self.grid_size_spinbox.config(state="normal")
+        self.grid_size_apply_btn.config(state="normal")
+        self._update_page_label()
         self._update_canvas_colors()
 
     # ─── 色選択 ────────────────────────────────────────────────────
@@ -321,7 +341,7 @@ class DrawingApp:
             self.color_buttons[color].config(relief=tk.SUNKEN, bd=3)
             self.status_var.set(
                 f"カラー: {COLOR_LABELS[color]}  ｜  "
-                "[1/2/3] 色切替  [E] 消しゴム  [←/→] ページ移動  右クリック: 消去"
+                "[1/2/3] 色切替  [E] 消しゴム  [←/→] レイヤー移動  右クリック: 消去"
             )
 
     # ─── G-code / プリント ─────────────────────────────────────────
@@ -331,25 +351,18 @@ class DrawingApp:
         self.status_var.set("G-code を output_plate.gcode に保存しました")
 
     def generate_and_print(self):
-        # 全ページ空チェック
-        has_any = any(any(cells for cells in page.values()) for page in self.pages)
-        if not has_any:
-            messagebox.showerror("エラー", "デザインが描かれていません。\n白・ピンク・黄色のいずれかのマスを塗ってからプリントしてください。")
-            return
-
-        # 塗り残しチェック（描画済みページに限定）
+        # 塗り残しチェック（積み重ね方式では全レイヤーが実在するタワーの断面なので、
+        # 空のレイヤーやスキップは許されない）
         total_cells = self.grid_size * self.grid_size
         for i, page in enumerate(self.pages):
             painted = sum(len(cells) for cells in page.values())
-            if painted == 0:
-                continue
             if painted < total_cells:
                 self.current_page = i
                 self._update_page_label()
                 self._update_canvas_colors()
                 messagebox.showerror(
                     "エラー",
-                    f"デザイン {i + 1} に塗られていないマスがあります。\nすべてのマスを塗ってからプリントしてください。",
+                    f"レイヤー {i + 1} に塗られていないマスがあります。\nすべてのマスを塗ってからプリントしてください。",
                 )
                 return
 
@@ -358,5 +371,6 @@ class DrawingApp:
             ref = octoprint.upload_and_print("output_plate.gcode")
             messagebox.showinfo("プリント開始", f"OctoPrint に送信しました。\nプリントを開始します。\n\n{ref}")
             self.status_var.set("OctoPrint に送信しました")
+            self._reset_job_after_print()
         except RuntimeError as e:
             messagebox.showerror("送信エラー", str(e))

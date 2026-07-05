@@ -191,7 +191,8 @@ h1 { font-size: 1rem; color: #333; padding: 4px 0; }
   <button class="nav-btn" id="prev-btn">◀</button>
   <span id="page-label">1 / 1</span>
   <button class="nav-btn" id="next-btn">▶</button>
-  <button id="copy-btn">前をコピー</button>
+  <button id="add-layer-btn">レイヤー追加</button>
+  <button id="copy-btn">前レイヤーをコピー</button>
   <button id="reset-btn">リセット</button>
   <button id="route-btn">ルート表示</button>
 </div>
@@ -219,9 +220,8 @@ const COLOR_PX = { white: "#ffffff", pink: "#ffb6c1", yellow: "#ffeb3b" };
 
 let cfg         = null;
 let gridSize    = 3;
-let pages       = [];
+let pages       = [emptyPage()];
 let currentPage = 0;
-let maxPages    = 1;
 let currentColor = "white";
 let routeVisible = false;
 let isPointerDown = false;
@@ -235,7 +235,6 @@ const ctx       = canvas.getContext("2d");
 async function init() {
   cfg = await fetch("/api/config").then(r => r.json());
   gridSize = cfg.gridSizeDefault;
-  maxPages = cfg.maxPages;
 
   const sel = document.getElementById("grid-size-sel");
   for (let i = cfg.gridSizeMin; i <= cfg.gridSizeMax; i++) {
@@ -245,8 +244,8 @@ async function init() {
     sel.appendChild(opt);
   }
 
-  while (pages.length < maxPages) pages.push(emptyPage());
   applyGridSize(gridSize);
+  updateGridSizeLockState();
   selectColor("white");
   bindEvents();
 }
@@ -256,6 +255,12 @@ function applyGridSize(size) {
   resizeCanvas();
   updatePageLabel();
   redraw();
+}
+
+function updateGridSizeLockState() {
+  // 2レイヤー目を追加した時点で、以降はマス目数を変更できない
+  // （積み重ねの全レイヤーで断面の形を揃える必要があるため）
+  document.getElementById("grid-size-sel").disabled = pages.length >= 2;
 }
 
 function emptyPage() {
@@ -406,6 +411,7 @@ function bindEvents() {
   // ページナビ
   document.getElementById("prev-btn").addEventListener("click", prevPage);
   document.getElementById("next-btn").addEventListener("click", nextPage);
+  document.getElementById("add-layer-btn").addEventListener("click", addLayer);
   document.getElementById("copy-btn").addEventListener("click", copyPrevPage);
   document.getElementById("reset-btn").addEventListener("click", resetPage);
   document.getElementById("route-btn").addEventListener("click", toggleRoute);
@@ -429,23 +435,31 @@ function selectColor(color) {
 }
 
 function updatePageLabel() {
-  document.getElementById("page-label").textContent = `${currentPage + 1} / ${maxPages}`;
+  document.getElementById("page-label").textContent = `${currentPage + 1} / ${pages.length}`;
   document.getElementById("prev-btn").disabled = currentPage === 0;
-  document.getElementById("next-btn").disabled = currentPage === maxPages - 1;
+  document.getElementById("next-btn").disabled = currentPage === pages.length - 1;
 }
 
 function prevPage() {
   if (currentPage > 0) { currentPage--; updatePageLabel(); redraw(); }
 }
 function nextPage() {
-  if (currentPage < maxPages - 1) { currentPage++; updatePageLabel(); redraw(); }
+  if (currentPage < pages.length - 1) { currentPage++; updatePageLabel(); redraw(); }
+}
+function addLayer() {
+  pages.push(emptyPage());
+  currentPage = pages.length - 1;
+  updateGridSizeLockState();
+  updatePageLabel();
+  redraw();
+  setStatus(`レイヤー ${pages.length} を追加しました`);
 }
 function copyPrevPage() {
   if (currentPage === 0) return;
   const prev = pages[currentPage - 1];
   pages[currentPage] = { white: [...prev.white], pink: [...prev.pink], yellow: [...prev.yellow] };
   redraw();
-  setStatus("前のデザインをコピーしました");
+  setStatus("前のレイヤーをコピーしました");
 }
 function resetPage() {
   pages[currentPage] = emptyPage();
@@ -482,8 +496,19 @@ async function downloadGcode() {
 }
 
 async function sendPrint() {
-  const hasAny = pages.some(p => COLORS.some(c => p[c].length > 0));
-  if (!hasAny) { showModal("エラー", "デザインが描かれていません"); return; }
+  // 塗り残しチェック（積み重ね方式では全レイヤーが実在するタワーの断面なので、
+  // 空のレイヤーやスキップは許されない）
+  const totalCells = gridSize * gridSize;
+  for (let i = 0; i < pages.length; i++) {
+    const painted = COLORS.reduce((n, c) => n + pages[i][c].length, 0);
+    if (painted < totalCells) {
+      currentPage = i;
+      updatePageLabel();
+      redraw();
+      showModal("エラー", `レイヤー ${i + 1} に塗られていないマスがあります。\nすべてのマスを塗ってからプリントしてください。`);
+      return;
+    }
+  }
 
   setStatus("OctoPrint に送信中...");
   document.getElementById("print-btn").disabled = true;
@@ -497,6 +522,7 @@ async function sendPrint() {
     if (data.ok) {
       showModal("プリント開始", `OctoPrint に送信しました\n\n${data.ref}`);
       setStatus("OctoPrint に送信しました");
+      resetJobAfterPrint();
     } else {
       showModal("送信エラー", data.error);
       setStatus("送信に失敗しました");
@@ -504,6 +530,15 @@ async function sendPrint() {
   } finally {
     document.getElementById("print-btn").disabled = false;
   }
+}
+
+function resetJobAfterPrint() {
+  // 印刷が終わったら、また最初にマス目数を設定するところからやり直す
+  pages = [emptyPage()];
+  currentPage = 0;
+  updateGridSizeLockState();
+  updatePageLabel();
+  redraw();
 }
 
 // ── モーダル ─────────────────────────────────────────────────
