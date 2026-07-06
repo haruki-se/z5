@@ -232,6 +232,44 @@ PCを使わず、Raspberry Pi単体（OctoPrint・ソレノイド制御と同居
 - 推奨（固定・OctoPrintと同じmDNSホスト名）: `http://3dz5.local:8080`
 - 起動ごとの実IPは `journalctl -u kintaro-web` や `qr_code.png` で確認: `http://<PiのLAN IP>:8080`
 
+### 日常の操作
+
+#### アクセスする
+
+基本はスマホ・PCのブラウザで `http://3dz5.local:8080` を開くだけでよい。IPアドレスが変わっても影響を受けない。
+
+QRコードで読み取りたい場合や、実際のIPアドレスを確認したい場合:
+```bash
+journalctl -u kintaro-web -n 40   # 起動時のURL・ASCII QRが見られる
+```
+画像として手元のPCに持ってきたい場合:
+```bash
+scp z5@3dz5.local:~/kintaro-app/金太郎飴code_exe/qr_code.png .
+```
+QRコード・表示される実IPは起動のたびに再生成され、Piのネットワーク環境（DHCP割り当て）が変わると内容も変わる。固定でアクセスしたい場合は上記の `3dz5.local` のURLを使うのが安全。
+
+#### アプリを更新する（コード変更を取り込む）
+
+```bash
+cd ~/kintaro-app
+git pull
+sudo systemctl restart kintaro-web
+```
+`git pull` だけでは実行中のプロセスには反映されないため、`systemctl restart` を忘れずに実行する。
+
+#### サービスの状態確認・起動/停止
+
+```bash
+systemctl status kintaro-web        # 状態確認
+sudo systemctl restart kintaro-web  # 再起動（更新反映・不調時など）
+sudo systemctl stop kintaro-web     # 停止
+journalctl -u kintaro-web -f        # ログをリアルタイムで確認（Ctrl+Cで終了）
+```
+
+#### Wi-Fiが変わった場合
+
+新しい場所で別のWi-Fiに接続したい場合は、次項「Wi-Fiネットワークの追加登録」を参照。
+
 ### Wi-Fiネットワークの追加登録
 
 このPiのWi-Fi設定はNetworkManager（`nmcli`）で管理されている（`/etc/netplan/*.yaml` はNetworkManagerが自動生成した読み取り専用のエクスポートで、直接編集するものではない）。
