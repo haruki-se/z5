@@ -1,0 +1,17 @@
+# 環境変数・シークレット（APIキーが含まれるため絶対にコミットしない）
+.env
+.env.*
+!.env.sample
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+金太郎飴code_exe/.venv/
+金太郎飴code_exe/qr_code.png
+
+# OS
+.DS_Store
+Thumbs.db

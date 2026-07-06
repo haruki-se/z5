@@ -1,0 +1,15 @@
+[Unit]
+Description=Kintaro-ame Drawing Web App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=z5
+WorkingDirectory=/home/z5/kintaro-app/金太郎飴code_exe
+ExecStart=/home/z5/kintaro-app/金太郎飴code_exe/.venv/bin/python web_app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
