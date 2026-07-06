@@ -189,6 +189,67 @@ PCを使わず、Raspberry Pi単体（OctoPrint・ソレノイド制御と同居
 
 ソレノイド制御（`sol3.py`）はOctoPrintの「GCODE System Commands」プラグイン経由で呼び出される仕組みのため、このデプロイでは変更不要です。
 
+### OctoPrintのセットアップ（未インストールの場合）
+
+SDカードを作り直した等でOctoPrintが入っていない状態から始める場合の手順。**このPiはRAMが415MB程度と非常に少なく、`/tmp` がRAMディスク(tmpfs, 200MB程度)になっているため、素の`pip install`だと`No space left on device`で失敗する**。必ずTMPDIRをディスク上のディレクトリに向けること。
+
+1. venvを作成してインストール:
+   ```bash
+   python3 -m venv ~/oprint
+   mkdir -p ~/pip-tmp
+   source ~/oprint/bin/activate
+   TMPDIR=~/pip-tmp pip install --upgrade pip
+   TMPDIR=~/pip-tmp pip install octoprint
+   deactivate
+   ```
+   （Python 3.13でも動作確認済み。TMPDIRを指定しないと依存パッケージのビルド中にtmpfsが埋まって失敗する）
+2. シリアルポート（プリンタ）にアクセスできるようグループ追加:
+   ```bash
+   sudo usermod -aG dialout,tty z5
+   ```
+3. systemdサービスを作成（ポート5000で起動）:
+   ```bash
+   sudo tee /etc/systemd/system/octoprint.service <<'EOF'
+   [Unit]
+   Description=OctoPrint
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=z5
+   ExecStart=/home/z5/oprint/bin/octoprint serve --host=0.0.0.0 --port=5000
+   Restart=on-failure
+   RestartSec=3
+
+   [Install]
+   WantedBy=multi-user.target
+   EOF
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now octoprint
+   ```
+4. haproxyをインストールし、ポート80→5000に転送する設定を追記:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y haproxy
+   sudo tee -a /etc/haproxy/haproxy.cfg <<'EOF'
+
+   frontend octoprint_frontend
+       bind *:80
+       default_backend octoprint_backend
+
+   backend octoprint_backend
+       timeout connect 10s
+       timeout server 3600s
+       server octoprint1 127.0.0.1:5000
+   EOF
+   sudo haproxy -c -f /etc/haproxy/haproxy.cfg   # 設定チェック
+   sudo systemctl restart haproxy
+   sudo systemctl enable haproxy
+   ```
+5. ブラウザで `http://3dz5.local` を開き、初回セットアップウィザードを完了する（管理者アカウント作成、プリンタ接続設定はプリンタ未接続なら後回しでよい）。
+6. Settings → Application Keys で新しいキーを発行し、`drawing_app/.env` の `OCTOPRINT_API_KEY` に設定する（プレースホルダーのまま残すとHTTPヘッダーに使えない文字でクラッシュするので要注意）。
+
 ### デプロイ手順
 
 1. PiにSSH接続する: `ssh z5@3dz5.local`
