@@ -1,3 +1,4 @@
+import os
 import sys
 import subprocess
 import tempfile
@@ -5,8 +6,8 @@ import socket
 from pathlib import Path
 
 _venv = Path(__file__).parent / ".venv"
-_venv_python = _venv / "Scripts" / "python.exe"
-_packages = ["flask", "python-dotenv", "requests", "qrcode"]
+_venv_python = _venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+_packages = ["flask", "python-dotenv", "requests", "qrcode", "pillow"]
 
 if sys.prefix == sys.base_prefix:
     # 仮想環境の外から起動された場合：venvを作ってそちらで再起動する
@@ -73,14 +74,26 @@ def print_gcode():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-if __name__ == "__main__":
+def _get_lan_ip():
+    # Debian系OS(Raspberry Pi OS含む)は /etc/hosts に "127.0.1.1 <hostname>" を
+    # 持つことが多く、gethostbyname(gethostname()) だとループバックが返ってしまう。
+    # 実際に送信はしないUDP接続でデフォルトルートのIPを引く方式にする。
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        local_ip = socket.gethostbyname(socket.gethostname())
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
     except Exception:
-        local_ip = "127.0.0.1"
+        return "127.0.0.1"
+    finally:
+        s.close()
 
-    url = f"http://{local_ip}:5000"
-    print(f"\n  PC:          http://localhost:5000")
+
+if __name__ == "__main__":
+    port = config.WEB_PORT
+    local_ip = _get_lan_ip()
+
+    url = f"http://{local_ip}:{port}"
+    print(f"\n  PC:          http://localhost:{port}")
     print(f"  smartphone:  {url}")
 
     env_path = Path(__file__).parent.parent / "drawing_app" / ".env"
@@ -96,12 +109,17 @@ if __name__ == "__main__":
         qr = qrcode.QRCode(border=1)
         qr.add_data(url)
         qr.make(fit=True)
+
         buf = io.StringIO()
         qr.print_ascii(out=buf, invert=True)
         sys.stdout.buffer.write(buf.getvalue().encode("utf-8"))
         sys.stdout.buffer.flush()
         print()
+
+        qr_path = Path(__file__).parent / "qr_code.png"
+        qr.make_image(fill_color="black", back_color="white").save(qr_path)
+        print(f"  QR画像:      {qr_path}\n")
     except Exception:
         pass
 
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)

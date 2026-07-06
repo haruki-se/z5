@@ -10,6 +10,7 @@ __pycache__/
 .venv/
 venv/
 金太郎飴code_exe/.venv/
+金太郎飴code_exe/qr_code.png
 
 # OS
 .DS_Store

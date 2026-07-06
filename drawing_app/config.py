@@ -79,8 +79,19 @@ GRID_SIZE_DEFAULT = 3    # アプリ起動時のデフォルトマス目数
 COLORS = ["white", "pink", "yellow"]
 
 # ---------------------------------------------------------------------------
+# Webサーバー設定
+# ---------------------------------------------------------------------------
+
+# Flask (web_app.py) のポート。既定は5000だが、Raspberry Pi単体運用時は
+# OctoPrintが同じPi上でポート5000(内部)/80(haproxy経由)を使っているため
+# 競合する。その場合は .env で WEB_PORT=8080 のように上書きする。
+WEB_PORT = int(os.environ.get("WEB_PORT", "5000"))
+
+# ---------------------------------------------------------------------------
 # OctoPrint 接続設定
 # ---------------------------------------------------------------------------
 
-OCTOPRINT_URL     = "http://3dz5.local"
+# 別PCから使う場合はmDNSホスト名(既定)、Raspberry Pi自身の上で動かす場合は
+# 起動直後のmDNS自己解決に依存しないよう .env で http://localhost にするのを推奨
+OCTOPRINT_URL     = os.environ.get("OCTOPRINT_URL", "http://3dz5.local")
 OCTOPRINT_API_KEY = os.environ.get("OCTOPRINT_API_KEY", "")

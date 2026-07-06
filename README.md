@@ -19,8 +19,9 @@ PCで起動したサーバーに、スマートフォン・タブレット・PC�
 │   ├── config.py                 # 定数・設定値
 │   ├── .env.sample               # .envの記述例
 │   └── .env                      # APIキー（gitには含まれない・各自作成）
-├── ラズパイに入れるプログラム/
-│   └── sol3.py                   # ソレノイド制御スクリプト（Raspberry Pi用）
+├── Raspberry_Pi/
+│   ├── sol3.py                   # ソレノイド制御スクリプト（Raspberry Pi用）
+│   └── kintaro-web.service       # web_appをPi起動時に自動起動させるsystemdユニット
 └── output_plate.gcode            # 生成されたG-code（自動上書き）
 ```
 
@@ -56,7 +57,7 @@ OCTOPRINT_API_KEY=your_api_key_here
 | 方法 | 手順 |
 |---|---|
 | エクスプローラーから | `金太郎飴code_exe/start_web.bat` をダブルクリック |
-| VS Code から | `金太郎飴code_exe/start_web.py` を開いて ▶ ボタンをクリック |
+| VS Code から | `金太郎飴code_exe/web_app.py` を開いて ▶ ボタンをクリック |
 
 - **初回のみ:** 仮想環境（`.venv/`）の作成と必要パッケージのインストールが自動で行われます（数分かかる場合があります）
 - **2回目以降:** 即座に起動します
@@ -118,11 +119,12 @@ OCTOPRINT_API_KEY=your_api_key_here
 | `SAFE_Z_LAYER1` | 1層目の DRAW_Z に加える退避の余白 (mm) | 7.0 |
 | `SAFE_Z_LAYER2_PLUS` | 2層目以降の DRAW_Z に加える退避の余白 (mm) | 7.0 |
 | `END_X` / `END_Y` / `END_Z` | 印刷終了後にノズルを移動させる位置 (mm) | -13.0 / 227.0 / 50.0 |
-| `OCTOPRINT_URL` | OctoPrint の URL | `http://3dz5.local` |
+| `OCTOPRINT_URL` | OctoPrint の URL（`.env` の `OCTOPRINT_URL` で上書き可） | `http://3dz5.local` |
+| `WEB_PORT` | Flaskサーバーのポート（`.env` の `WEB_PORT` で上書き可） | `5000` |
 
 ---
 
-## 2. ソレノイド制御（`ラズパイに入れるプログラム/sol3.py`）
+## 2. ソレノイド制御（`Raspberry_Pi/sol3.py`）
 
 Raspberry Pi の GPIO ピンに接続したソレノイドを on / off / pulse で操作するスクリプトです。
 
@@ -133,7 +135,7 @@ Raspberry Pi の GPIO ピンに接続したソレノイドを on / off / pulse �
 
 ### GPIO ピンの設定
 
-[ラズパイに入れるプログラム/sol3.py](ラズパイに入れるプログラム/sol3.py) の先頭で変更します。
+[Raspberry_Pi/sol3.py](Raspberry_Pi/sol3.py) の先頭で変更します。
 
 ```python
 PIN1 = 17   # ソレノイド 1
@@ -168,3 +170,64 @@ python sol3.py 1 on
 # ソレノイド 3 を OFF
 python sol3.py 3 off
 ```
+
+---
+
+## 3. Raspberry Pi 単体運用（自動起動）
+
+PCを使わず、Raspberry Pi単体（OctoPrint・ソレノイド制御と同居）でお絵かきWebアプリを常時起動しておく方法です。
+
+### 構成
+
+同一のRaspberry Pi（ホスト名例: `3dz5`）上で3つが同居します。
+
+| サービス | ポート |
+|---|---|
+| OctoPrint（haproxy経由） | 80 |
+| OctoPrint（内部） | 5000 |
+| お絵かきWebアプリ（`web_app.py`） | **8080**（`.env` の `WEB_PORT` で指定。OctoPrintと競合するため5000は使えない） |
+
+ソレノイド制御（`sol3.py`）はOctoPrintの「GCODE System Commands」プラグイン経由で呼び出される仕組みのため、このデプロイでは変更不要です。
+
+### デプロイ手順
+
+1. PiにSSH接続する: `ssh z5@3dz5.local`
+2. リポジトリをclone（2回目以降は `git pull`）:
+   ```bash
+   git clone -b test https://github.com/haruki-se/z5.git ~/kintaro-app
+   ```
+   （`test` ブランチで検証中のため明示的に指定。`main`/`master` に統合され次第、指定不要になる予定）
+   リポジトリがprivateの場合は、事前にPi側でGitHubの認証情報（PATなど）を設定してください。
+   `git pull` で更新した後は、実行中のサーバーに反映するため `sudo systemctl restart kintaro-web` も忘れずに実行してください。
+3. `drawing_app/.env` を作成し、以下を設定する:
+   ```
+   OCTOPRINT_API_KEY=（OctoPrintのアプリケーションキー）
+   WEB_PORT=8080
+   OCTOPRINT_URL=http://localhost
+   ```
+4. 初回のみ手動起動して仮想環境を作らせる（起動ログでURL・QRが出ることを確認したら Ctrl+C）:
+   ```bash
+   cd ~/kintaro-app/金太郎飴code_exe
+   python3 web_app.py
+   ```
+5. systemdサービスを登録し、自動起動を有効化する:
+   ```bash
+   sudo cp ~/kintaro-app/Raspberry_Pi/kintaro-web.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now kintaro-web
+   ```
+6. 動作確認:
+   ```bash
+   systemctl status kintaro-web
+   journalctl -u kintaro-web -n 40   # 起動時のURL・ASCII QRを確認
+   ```
+   スマホでQR画像を見たい場合は、生成された `qr_code.png` を取得します:
+   ```bash
+   scp z5@3dz5.local:~/kintaro-app/金太郎飴code_exe/qr_code.png .
+   ```
+7. `sudo reboot` 後、`systemctl status kintaro-web` で自動起動を確認する。
+
+### アクセスURL
+
+- 推奨（固定・OctoPrintと同じmDNSホスト名）: `http://3dz5.local:8080`
+- 起動ごとの実IPは `journalctl -u kintaro-web` や `qr_code.png` で確認: `http://<PiのLAN IP>:8080`
