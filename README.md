@@ -231,3 +231,27 @@ PCを使わず、Raspberry Pi単体（OctoPrint・ソレノイド制御と同居
 
 - 推奨（固定・OctoPrintと同じmDNSホスト名）: `http://3dz5.local:8080`
 - 起動ごとの実IPは `journalctl -u kintaro-web` や `qr_code.png` で確認: `http://<PiのLAN IP>:8080`
+
+### Wi-Fiネットワークの追加登録
+
+このPiのWi-Fi設定はNetworkManager（`nmcli`）で管理されている（`/etc/netplan/*.yaml` はNetworkManagerが自動生成した読み取り専用のエクスポートで、直接編集するものではない）。
+
+複数の場所（Wi-Fi）で使う予定がある場合、あらかじめ空のプロファイルを登録しておき、後からSSID・パスワードを書き換えるだけで使えるようにできる。
+
+**① 雛形を作成（今すぐ登録・今の接続には影響しない）**
+```bash
+sudo nmcli connection add type wifi con-name "wifi-template" ifname wlan0 ssid "CHANGE_ME" -- wifi-sec.key-mgmt wpa-psk wifi-sec.psk "CHANGE_ME" connection.autoconnect no
+```
+
+**② 実際に使うSSIDが決まったら書き換え**
+```bash
+sudo nmcli connection modify wifi-template wifi.ssid "実際のSSID" wifi-sec.psk "実際のパスワード" connection.autoconnect yes
+```
+
+**③ （任意）その場で接続確認**
+```bash
+sudo nmcli connection up wifi-template
+nmcli -f GENERAL.STATE,IP4.ADDRESS device show wlan0
+```
+
+登録済みの接続一覧は `nmcli connection show` で確認できる。`autoconnect yes` にしておけば、以後は該当SSIDの電波が届く場所で自動的に接続される（既存の `utsuroi` 接続とは独立しており、優先順位は自動的に決まる）。
