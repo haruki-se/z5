@@ -218,6 +218,7 @@ SDカードを作り直した等でOctoPrintが入っていない状態から始
    [Service]
    Type=simple
    User=z5
+   WorkingDirectory=/home/z5
    ExecStart=/home/z5/oprint/bin/octoprint serve --host=0.0.0.0 --port=5000
    Restart=on-failure
    RestartSec=3
@@ -249,6 +250,18 @@ SDカードを作り直した等でOctoPrintが入っていない状態から始
    ```
 5. ブラウザで `http://3dz5.local` を開き、初回セットアップウィザードを完了する（管理者アカウント作成、プリンタ接続設定はプリンタ未接続なら後回しでよい）。
 6. Settings → Application Keys で新しいキーを発行し、`drawing_app/.env` の `OCTOPRINT_API_KEY` に設定する（プレースホルダーのまま残すとHTTPヘッダーに使えない文字でクラッシュするので要注意）。
+7. ソレノイド制御用に「GCode System Commands」プラグイン（[kantlivelong/OctoPrint-GCodeSystemCommands](https://github.com/kantlivelong/OctoPrint-GCodeSystemCommands)）をインストールする: Settings → Plugin Manager → Get More → `GCode System Commands` を検索してInstall → OctoPrint再起動。
+   その後、Settings → GCode System Command の設定画面で、`config.py` の `CMD_MAP`（[config.py:62-66](drawing_app/config.py#L62-L66)）に対応する3つのコマンド定義を追加する:
+
+   | G-Code (OCTO+ID) | Command |
+   |---|---|
+   | 901 (white) | `python3 /home/z5/kintaro-app/Raspberry_Pi/sol3.py 1 pulse` |
+   | 902 (pink)  | `python3 /home/z5/kintaro-app/Raspberry_Pi/sol3.py 2 pulse` |
+   | 903 (yellow)| `python3 /home/z5/kintaro-app/Raspberry_Pi/sol3.py 3 pulse` |
+
+   **ハマりどころ:**
+   - `octoprint.service` に `WorkingDirectory=/home/z5` が必須（上記の手順3で設定済みのはず）。指定しないとsystemdサービスのカレントディレクトリが `/` になり、`RPi.GPIO`（内部で`lgpio`を使用）が通知用パイプファイル（`.lgd-nfy*`）をそこに作成しようとして権限エラーでクラッシュする。OctoPrintのTerminalタブに `Return(GCodeSystemCommands): error` と出た場合はこれを疑う。
+   - Settings UI経由ではなくAPIで直接設定する場合、`command_definitions` の `id` は**文字列**で送ること（`901`ではなく`"901"`）。数値で送ると内部の辞書キー比較が型不一致でマッチせず `No definition found for ID xxx` になる。
 
 ### デプロイ手順
 
