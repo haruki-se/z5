@@ -46,7 +46,7 @@ CELL_SPACE    = MATERIAL_SIZE + JOINT_SIZE  # セル1つ分のピッチ = 6.0mm
 
 DRAW_Z  = -1.0   # 最下段(1層目)でノズルが素材に当たる Z 高さ (mm)。低すぎると素材を押しつぶすので注意
                  # 2層目以降は「層番号 × MATERIAL_SIZE」ぶんずつ自動で加算される（積み重ね方式）
-SAFE_Z_LAYER1     = 7.0  # 1層目の退避時に DRAW_Z に加える余白 (mm)
+SAFE_Z_LAYER1     = 10.0  # 1層目の退避時に DRAW_Z に加える余白 (mm)
 SAFE_Z_LAYER2_PLUS = 6.0  # 2層目以降の退避時に DRAW_Z に加える余白 (mm)
                           # 積み重ねが進むほどタワーが高くなるため、層ごとに退避高さも自動で底上げされる
 F_SPEED = 3600  # 移動速度 (mm/min)。G0/G1 コマンドの F パラメータに使用
@@ -60,7 +60,7 @@ END_Z = 50.0
 # カラー名 → プリンターに送るコマンド文字列のマッピング
 # OCTO90X はノズルユニットへの色指定カスタムコマンド
 CMD_MAP = {
-    "white":  "OCTO901",  # 白（ベース色）
+    "white":  "OCTO901",  # 桃色
     "pink":   "OCTO902",  # ピンク
     "yellow": "OCTO903",  # 黄色
 }
