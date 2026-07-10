@@ -36,7 +36,7 @@ CENTER_X = 106.70
 CENTER_Y = 149.00
 
 MATERIAL_SIZE = 5.0         # 飴1個（素材ブロック）の一辺サイズ (mm)。積み重ね時のZ方向1段分の高さでもある
-JOINT_SIZE    = 2.2        # ブロック間の目地（隙間）幅 (mm)
+JOINT_SIZE    = 1.2        # ブロック間の目地（隙間）幅 (mm)
 CELL_SPACE    = MATERIAL_SIZE + JOINT_SIZE  # セル1つ分のピッチ = 6.0mm
                                              # （素材5mm + 目地1mm）
 
