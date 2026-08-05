@@ -270,7 +270,7 @@ SDカードを作り直した等でOctoPrintが入っていない状態から始
    ```bash
    git clone -b test https://github.com/haruki-se/z5.git ~/kintaro-app
    ```
-   （`test` ブランチで検証中のため明示的に指定。`main`/`master` に統合され次第、指定不要になる予定）
+   （2026-08-05時点で `main`/`master` にも統合済み。ただし `test` は今後も校正作業で先行更新される可能性があるため、最新の変更を確実に取り込むには引き続き `-b test` の指定を推奨）
    リポジトリがprivateの場合は、事前にPi側でGitHubの認証情報（PATなど）を設定してください。
    `git pull` で更新した後は、実行中のサーバーに反映するため `sudo systemctl restart kintaro-web` も忘れずに実行してください。
 3. `drawing_app/.env` を作成し、以下を設定する:
