@@ -344,26 +344,74 @@ journalctl -u kintaro-web -f        # ログをリアルタイムで確認（Ctr
 
 新しい場所で別のWi-Fiに接続したい場合は、次項「Wi-Fiネットワークの追加登録」を参照。
 
-### Wi-Fiネットワークの追加登録
+### Wi-Fiネットワークの追加・管理
 
 このPiのWi-Fi設定はNetworkManager（`nmcli`）で管理されている（`/etc/netplan/*.yaml` はNetworkManagerが自動生成した読み取り専用のエクスポートで、直接編集するものではない）。
 
-複数の場所（Wi-Fi）で使う予定がある場合、あらかじめ空のプロファイルを登録しておき、後からSSID・パスワードを書き換えるだけで使えるようにできる。
+> ⚠️ **注意**: 以下のコマンドはすべて、Windowsターミナルではなく **PiにSSH接続（`ssh z5@3dz5.local`）した状態** で実行する。
 
-**① 雛形を作成（今すぐ登録・今の接続には影響しない）**
+---
+
+#### 1. Wi-Fiネットワークの事前登録
+
+複数の場所（Wi-Fi）で使う予定がある場合、あらかじめ接続情報を登録しておくことで、その場所で電源を入れるだけで自動接続されるようになる。
+
+##### パターンA: 接続名を指定して直接登録する（推奨）
 ```bash
-sudo nmcli connection add type wifi con-name "wifi-template" ifname wlan0 ssid "CHANGE_ME" -- wifi-sec.key-mgmt wpa-psk wifi-sec.psk "CHANGE_ME" connection.autoconnect no
+sudo nmcli connection add type wifi con-name "場所名（例: office-wifi）" ifname wlan0 ssid "実際のSSID" -- wifi-sec.key-mgmt wpa-psk wifi-sec.psk "実際のパスワード" connection.autoconnect yes
 ```
 
-**② 実際に使うSSIDが決まったら書き換え**
+##### パターンB: 雛形を作成して後から書き換える
+あらかじめ空のプロファイルを登録しておき、後からSSID・パスワードを書き換える場合：
+
+1. **雛形を作成（今の接続には影響しない）**
+   ```bash
+   sudo nmcli connection add type wifi con-name "wifi-template" ifname wlan0 ssid "CHANGE_ME" -- wifi-sec.key-mgmt wpa-psk wifi-sec.psk "CHANGE_ME" connection.autoconnect no
+   ```
+2. **SSID・パスワードが決まったら書き換えて自動接続を有効化**
+   ```bash
+   sudo nmcli connection modify wifi-template wifi.ssid "実際のSSID" wifi-sec.psk "実際のパスワード" connection.autoconnect yes
+   ```
+
+---
+
+#### 2. 登録内容の確認
+
 ```bash
-sudo nmcli connection modify wifi-template wifi.ssid "実際のSSID" wifi-sec.psk "実際のパスワード" connection.autoconnect yes
+# 登録済みプロファイル一覧の確認（DEVICE列に wlan0 があるものが現在接続中）
+nmcli connection show
+
+# 特定のプロファイルの内容（SSID・パスワード・自動接続設定）を確認
+sudo nmcli connection show "設定名" | grep -E "802-11-wireless\.ssid|802-11-wireless-security\.psk|connection\.autoconnect"
 ```
 
-**③ （任意）その場で接続確認**
+---
+
+#### 3. 優先順位（Priority）の設定と確認
+
+複数の登録Wi-Fi電波が同時に届く場所で、特定のWi-Fiを優先して繋ぎたい場合（数値が大きいほど優先される。デフォルトは `0`）：
+
 ```bash
-sudo nmcli connection up wifi-template
-nmcli -f GENERAL.STATE,IP4.ADDRESS device show wlan0
+# 優先順位を設定（例: 優先度を 10 に設定）
+sudo nmcli connection modify "設定名" connection.autoconnect-priority 10
+
+# 設定された優先順位を一覧で確認
+nmcli -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show
 ```
 
-登録済みの接続一覧は `nmcli connection show` で確認できる。`autoconnect yes` にしておけば、以後は該当SSIDの電波が届く場所で自動的に接続される（既存の `utsuroi` 接続とは独立しており、優先順位は自動的に決まる）。
+---
+
+#### 4. プロファイルの変更・削除・手動切替
+
+```bash
+# 接続名（プロファイル名）のリネーム
+sudo nmcli connection modify "旧設定名" connection.id "新設定名"
+
+# 不要になった設定の削除
+sudo nmcli connection delete "設定名"
+
+# （テスト用）特定のWi-Fiへ手動で切り替える
+sudo nmcli connection up "設定名"
+```
+> ※ `nmcli connection up` で別のWi-Fiに切り替えると、IPアドレスが変わるため現在のSSH接続が一時切断される場合がある。その際はPC側のWi-Fiも同じアクセスポイントに切り替えて再度 `ssh z5@3dz5.local` で接続し直す。
+
